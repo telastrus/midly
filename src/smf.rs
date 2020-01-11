@@ -1,7 +1,8 @@
 use crate::{
-    event::Event,
+    event::{Event, EventKind, MetaMessage},
     prelude::*,
     primitive::{Format, Timing},
+
 };
 
 /// Represents a Standard Midi File (.mid and .midi files).
@@ -42,6 +43,54 @@ impl Smf<'_> {
     /// method is discouraged as it carries a performance penalty unless done correctly.
     pub fn parse_lazy(raw: &[u8]) -> Result<Smf<TrackIter>> {
         Smf::read(raw)
+    }
+
+    fn to_abstime(v: Vec<Event<'_>>) -> Vec<Event<'_>> {
+        let mut now: u32 = 0;
+        v.iter().map(move |i: &Event<'_>| {
+            let delta: u32 = i.delta.into();
+            now += delta;
+            let mut n = i.clone();
+            n.delta = now.into();
+            n
+        }).collect()
+    }
+
+    fn to_reltime(v: Vec<Event<'_>>) -> Vec<Event<'_>> {
+        let mut now: u32 = 0;
+        v.iter().map(move |i: &Event<'_>| {
+            let delta: u32 = i.delta.into();
+            let mut n = i.clone();
+            n.delta = (delta - now).into();
+            now = delta;
+            n
+        }).collect()
+    }
+
+    fn fix_track_end(v: Vec<Event<'_>>) -> Vec<Event<'_>> {
+        let mut out: Vec<Event<'_>> = vec![];
+        let mut accum: u32 = 0;
+        for msg in v {
+            if msg.kind == EventKind::Meta(MetaMessage::EndOfTrack) {
+                let delta: u32 = msg.delta.into();
+                accum += delta;
+            } else {
+                let mut ev = msg.clone();
+                if accum > 0 {
+                    let delta: u32 = msg.delta.into();
+                    ev.delta = (delta + accum).into();
+                }
+                out.push(ev)
+            }
+        }
+        out.push(Event { delta: accum.into(), kind: EventKind::Meta(MetaMessage::EndOfTrack) });
+        out
+    }
+
+    pub fn as_merged(&self) -> Vec<Event<'_>> {
+        let mut messages: Vec<Event<'_>> = vec![];
+        //self.tracks.iter().for_each(|i| messages.extend(Self::to_abstime(i)));
+        messages
     }
 }
 impl<'a, T: TrackRepr<'a>> Smf<'a, T> {

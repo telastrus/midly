@@ -4,6 +4,7 @@ use crate::{
     prelude::*,
     primitive::{read_varlen_slice, SmpteTime},
 };
+use std::boxed::Box;
 
 /// Represents a fully parsed track event, with delta time.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -53,7 +54,7 @@ pub enum EventKind<'a> {
     Escape(&'a [u8]),
     /// A meta-message, giving extra information for correct playback, like tempo, song name,
     /// lyrics, etc...
-    Meta(MetaMessage<'a>),
+    Meta(MetaMessage),
 }
 impl<'a> EventKind<'a> {
     /// Reads a single event from the given stream.
@@ -310,19 +311,19 @@ impl MidiMessage {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum MetaMessage<'a> {
+pub enum MetaMessage {
     /// For `Format::Sequential` MIDI file types, `TrackNumber` can be empty, and defaults to
     /// track index.
     TrackNumber(Option<u16>),
-    Text(&'a [u8]),
-    Copyright(&'a [u8]),
-    TrackName(&'a [u8]),
-    InstrumentName(&'a [u8]),
-    Lyric(&'a [u8]),
-    Marker(&'a [u8]),
-    CuePoint(&'a [u8]),
-    ProgramName(&'a [u8]),
-    DeviceName(&'a [u8]),
+    Text(Vec<u8>),
+    Copyright(Vec<u8>),
+    TrackName(Vec<u8>),
+    InstrumentName(Vec<u8>),
+    Lyric(Vec<u8>),
+    Marker(Vec<u8>),
+    CuePoint(Vec<u8>),
+    ProgramName(Vec<u8>),
+    DeviceName(Vec<u8>),
     MidiChannel(u4),
     MidiPort(u7),
     /// Obligatory at track end.
@@ -340,17 +341,16 @@ pub enum MetaMessage<'a> {
     /// numbers indicate number of sharps.
     /// `false` indicates a major scale, `true` indicates a minor scale.
     KeySignature(i8, bool),
-    SequencerSpecific(&'a [u8]),
+    SequencerSpecific(Vec<u8>),
     /// An unknown meta-message, unconforming to the spec.
     ///
     /// This event is not generated with the `strict` feature enabled.
-    Unknown(u8, &'a [u8]),
+    Unknown(u8, Vec<u8>),
 }
-impl<'a> MetaMessage<'a> {
-    fn read(raw: &mut &'a [u8]) -> Result<MetaMessage<'a>> {
+impl MetaMessage {
+    fn read(raw: &mut &[u8]) -> Result<MetaMessage> {
         let type_byte = u8::read(raw).context(err_invalid("failed to read meta message type"))?;
-        let mut data =
-            read_varlen_slice(raw).context(err_invalid("failed to read meta message data"))?;
+        let mut data = read_varlen_slice(raw).context(err_invalid("failed to read meta message data"))?;
         Ok(match type_byte {
             0x00 => MetaMessage::TrackNumber({
                 if cfg!(feature = "strict") {
@@ -365,15 +365,15 @@ impl<'a> MetaMessage<'a> {
                     None
                 }
             }),
-            0x01 => MetaMessage::Text(data),
-            0x02 => MetaMessage::Copyright(data),
-            0x03 => MetaMessage::TrackName(data),
-            0x04 => MetaMessage::InstrumentName(data),
-            0x05 => MetaMessage::Lyric(data),
-            0x06 => MetaMessage::Marker(data),
-            0x07 => MetaMessage::CuePoint(data),
-            0x08 => MetaMessage::ProgramName(data),
-            0x09 => MetaMessage::DeviceName(data),
+            0x01 => MetaMessage::Text(data.to_owned()),
+            0x02 => MetaMessage::Copyright(data.to_owned()),
+            0x03 => MetaMessage::TrackName(data.to_owned()),
+            0x04 => MetaMessage::InstrumentName(data.to_owned()),
+            0x05 => MetaMessage::Lyric(data.to_owned()),
+            0x06 => MetaMessage::Marker(data.to_owned()),
+            0x07 => MetaMessage::CuePoint(data.to_owned()),
+            0x08 => MetaMessage::ProgramName(data.to_owned()),
+            0x09 => MetaMessage::DeviceName(data.to_owned()),
             0x20 if data.len() >= 1 => {
                 if cfg!(feature = "strict") {
                     ensure!(
@@ -435,12 +435,12 @@ impl<'a> MetaMessage<'a> {
             0x59 => {
                 MetaMessage::KeySignature(u8::read(&mut data)? as i8, u8::read(&mut data)? != 0)
             }
-            0x7F => MetaMessage::SequencerSpecific(data),
+            0x7F => MetaMessage::SequencerSpecific(data.to_owned()),
             _ => {
                 if cfg!(feature = "strict") {
                     bail!(err_pedantic("unknown meta event type"))
                 } else {
-                    MetaMessage::Unknown(type_byte, data)
+                    MetaMessage::Unknown(type_byte, data.to_owned())
                 }
             }
         })
