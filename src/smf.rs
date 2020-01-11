@@ -89,8 +89,12 @@ impl Smf<'_> {
 
     pub fn as_merged(&self) -> Vec<Event<'_>> {
         let mut messages: Vec<Event<'_>> = vec![];
-        //self.tracks.iter().for_each(|i| messages.extend(Self::to_abstime(i)));
-        messages
+        self.tracks.iter().for_each(|i| messages.extend(Self::to_abstime(i.clone())));
+        messages.sort_by_key(|i: &Event<'_>| {
+            let n: u32 = i.delta.into();
+            n
+        });
+        Self::fix_track_end(Self::to_reltime(messages))
     }
 }
 impl<'a, T: TrackRepr<'a>> Smf<'a, T> {
